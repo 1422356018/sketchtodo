@@ -1,0 +1,12 @@
+# 项目无关
+*.lnk
+*.vbs
+*.bat
+*.ps1
+Date/
+
+# 文章类
+真白的口.html
+
+# 数据备份
+data.json

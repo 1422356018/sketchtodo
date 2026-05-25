@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Todo · 手绘卡片</title>
+<link rel="icon" type="image/x-icon" href="pixiv12.ico">
+<link rel="apple-touch-icon" href="pixiv12.ico">
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;500;600;700&family=ZCOOL+KuaiLe&family=Long+Cang&display=swap" rel="stylesheet">
+<style>
+  /* ===================================================================
+     Excalidraw 启发的手绘风格 Todo Cards
+     架构：Class-based（学kards）+ 手绘渲染（学Excalidraw）
+     =================================================================== */
+
+  /* ---- Reset & Base ---- */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ===== 壁纸系统 ===== */
+  body {
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    color: #2d2d3a;
+    min-height: 100vh;
+    padding: 32px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: background-image 0.6s ease;
+  }
+  /* 壁纸层 */
+  #wallpaper-layer {
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    transition: background-image 0.8s ease;
+  }
+  /* 半透明遮罩 — 保证所有文字可读 */
+  #wallpaper-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background: rgba(0, 0, 0, 0.10);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+
+  /* ===== 毛玻璃组件 ===== */
+  .glass {
+    background: rgba(255, 253, 249, 0.70) !important;
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    border-color: rgba(45, 45, 58, 0.25) !important;
+  }
+  .glass-heavy {
+    background: rgba(255, 253, 249, 0.80) !important;
+    backdrop-filter: blur(28px) saturate(1.4);
+    -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  }
+  /* 卡片在毛玻璃上保留更清晰的手绘边框 */
+  .glass-card {
+    background: rgba(255, 253, 249, 0.65) !important;
+    backdrop-filter: blur(18px) saturate(1.1);
+    -webkit-backdrop-filter: blur(18px) saturate(1.1);
+    border-color: rgba(45, 45, 58, 0.30) !important;
+  }
+  .glass-card:hover {
+    background: rgba(255, 253, 249, 0.80) !important;
+  }
+
+  /* ---- 手绘边框魔术（Excalidraw核心技巧） ---- */
+  .hand-drawn {
+    border: 2px solid #2d2d3a;
+    border-radius: 255px 15px 225px 15px / 15px 225px 15px 255px;
+    box-shadow:
+      3px 3px 0 #2d2d3a,
+      -1px -1px 0 rgba(0,0,0,0.03);
+  }
+
+  .hand-drawn-sm {
+    border: 2px solid #2d2d3a;
+    border-radius: 20px 5px 18px 5px / 5px 18px 5px 20px;
+  }
+
+  /* ---- Header ---- */
+  .header {
+    width: 100%;
+    max-width: 1300px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 28px 20px;
+    margin-bottom: 28px;
+    background: #fffdf9;
+    position: relative;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 10%;
+    width: 80%;
+    height: 3px;
+    background: #2d2d3a;
+    border-radius: 50%;
+  }
+  .header h1 {
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 32px;
+    font-weight: 700;
+    color: #2d2d3a;
+    letter-spacing: -0.5px;
+    transform: rotate(-0.5deg);
+  }
+  .header h1::before { content: '✏️ '; font-size: 26px; }
+  .header-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 15px;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+  }
+  .header-stats span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #fffdf9;
+    padding: 6px 18px;
+    border: 2px solid #2d2d3a;
+    border-radius: 30px 8px 28px 8px / 8px 28px 8px 30px;
+    box-shadow: 2px 2px 0 #2d2d3a;
+  }
+  .header-stats .num { font-weight: 700; font-size: 17px; }
+  .num.done { color: #2b8a3e; }
+  .num.todo { color: #d97706; }
+  .num.doing { color: #6d28d9; }
+
+  /* ---- Add Button ---- */
+  .add-bar {
+    width: 100%;
+    max-width: 1300px;
+    margin-bottom: 28px;
+  }
+  .btn-add-main {
+    padding: 14px 32px;
+    background: #fffdf9;
+    border: 2.5px solid #2d2d3a;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    box-shadow: 3px 3px 0 #2d2d3a;
+    border-radius: 28px 6px 24px 6px / 6px 24px 6px 28px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .btn-add-main:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: 5px 5px 0 #2d2d3a;
+  }
+  .btn-add-main:active {
+    transform: translate(2px, 2px);
+    box-shadow: 1px 1px 0 #2d2d3a;
+  }
+
+  /* ---- Columns ---- */
+  .board {
+    width: 100%;
+    max-width: 1300px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .board { grid-template-columns: 1fr; }
+  }
+  .column {
+    background: #fffdf9;
+    padding: 20px 18px 18px;
+    box-shadow: 4px 4px 0 #2d2d3a;
+    position: relative;
+    transition: box-shadow 0.2s;
+  }
+  .column.drag-over {
+    box-shadow: 4px 4px 0 #7c3aed;
+    border-color: #7c3aed;
+    background: #f5f0ff;
+  }
+  .column-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 14px;
+    margin-bottom: 14px;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 20px;
+    font-weight: 600;
+    border-bottom: 2.5px dashed #2d2d3a;
+  }
+  .column-header .count {
+    border: 2px solid #2d2d3a;
+    padding: 2px 12px;
+    border-radius: 20px 4px 18px 4px / 4px 18px 4px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    background: #fff;
+  }
+  .col-todo .column-header { color: #d97706; }
+  .col-doing .column-header { color: #6d28d9; }
+  .col-done .column-header { color: #2b8a3e; }
+
+  /* ---- Cards (Excalidraw手绘风格) ---- */
+  .card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 80px;
+    padding: 4px 0;
+  }
+  .card {
+    background: #fffdf9;
+    padding: 16px 18px;
+    cursor: grab;
+    transition: all 0.15s;
+    position: relative;
+    user-select: none;
+    animation: cardIn 0.25s ease-out;
+    transform: rotate(var(--rot, 0deg));
+  }
+  .card:nth-child(odd)  { --rot: -0.5deg; }
+  .card:nth-child(even) { --rot: 0.8deg; }
+  .card:nth-child(3n)   { --rot: -0.2deg; }
+  .card:active { cursor: grabbing; }
+
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(10px) rotate(0deg); }
+    to { opacity: 1; transform: translateY(0) rotate(var(--rot, 0deg)); }
+  }
+
+  .card:hover {
+    transform: rotate(0deg) translate(-1px, -1px);
+    box-shadow: 5px 5px 0 #2d2d3a;
+  }
+
+  .card.dragging {
+    opacity: 0.3;
+    transform: rotate(-2deg) scale(0.95);
+  }
+
+  .card-title {
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    padding-right: 52px;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+  .card-desc {
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 13.5px;
+    color: #666;
+    line-height: 1.6;
+    padding-right: 52px;
+    word-break: break-word;
+  }
+  .card-desc:empty { display: none; }
+  .card-time-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 13px;
+    color: #888;
+    background: #f5f3ee;
+    padding: 3px 12px;
+    margin-top: 8px;
+  }
+  .card-time-tag.overdue { color: #dc2626; background: #fef2f2; }
+
+  .card-actions {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .card:hover .card-actions { opacity: 1; }
+  .card-action-btn {
+    width: 32px;
+    height: 32px;
+    border: 2px solid #2d2d3a;
+    background: #fffdf9;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.12s;
+    box-shadow: 1.5px 1.5px 0 #2d2d3a;
+  }
+  .card-action-btn:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 #2d2d3a; }
+  .btn-delete:hover { background: #fee2e2; }
+
+  /* ---- Toast提示动画 ---- */
+  @keyframes toastIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(-20px) rotate(-1deg); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0) rotate(0deg); }
+  }
+
+  .card.done-card { opacity: 0.7; padding: 10px 14px; }
+  .card.done-card .card-title {
+    text-decoration: line-through;
+    text-decoration-thickness: 2px;
+    text-decoration-color: #2b8a3e;
+    color: #999;
+    font-size: 15px;
+    margin-bottom: 0;
+    padding-right: 70px;
+  }
+  .card.done-card .card-actions { top: 8px; right: 10px; }
+
+  /* ---- Done stamp ---- */
+  .done-stamp {
+    position: absolute;
+    bottom: 12px;
+    right: 14px;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 11px;
+    color: #2b8a3e;
+    border: 2px solid #2b8a3e;
+    padding: 1px 8px;
+    transform: rotate(-8deg);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  /* ---- Drag Ghost (手绘风格跟随) ---- */
+  .drag-ghost {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+    background: #fffdf9;
+    border: 2.5px solid #6d28d9;
+    padding: 12px 18px;
+    box-shadow: 6px 6px 0 #6d28d9;
+    transform: rotate(-2deg);
+    white-space: nowrap;
+    max-width: 260px;
+    opacity: 0.92;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  /* ---- Empty State ---- */
+  .empty-state {
+    text-align: center;
+    padding: 40px 16px;
+    color: #bbb;
+    font-size: 15px;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    pointer-events: none;
+  }
+  .empty-state .icon { font-size: 40px; margin-bottom: 10px; opacity: 0.5; }
+
+  /* ---- Modal (手绘弹窗) ---- */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.3);
+    backdrop-filter: blur(3px);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+  }
+  .modal-overlay.active { display: flex; }
+
+  .modal-card {
+    background: #fffdf9;
+    padding: 32px;
+    width: 520px;
+    max-width: 92vw;
+    box-shadow: 8px 8px 0 #2d2d3a;
+    animation: modalSlide 0.25s ease-out;
+  }
+  @keyframes modalSlide {
+    from { opacity: 0; transform: translateY(20px) rotate(-1deg); }
+    to { opacity: 1; transform: translateY(0) rotate(0deg); }
+  }
+  .modal-card h2 {
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 26px;
+    font-weight: 700;
+    margin-bottom: 24px;
+    color: #2d2d3a;
+    border-bottom: 2.5px dashed #2d2d3a;
+    padding-bottom: 12px;
+  }
+  .form-group { margin-bottom: 20px; }
+  .form-group label {
+    display: block;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 16px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 6px;
+  }
+  .form-group input,
+  .form-group textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 2px solid #2d2d3a;
+    font-size: 15px;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    color: #2d2d3a;
+    background: #fffdf9;
+    outline: none;
+    transition: box-shadow 0.2s;
+    box-shadow: 2px 2px 0 #2d2d3a;
+  }
+  .form-group input:focus,
+  .form-group textarea:focus {
+    box-shadow: 4px 4px 0 #6d28d9;
+    border-color: #6d28d9;
+  }
+  .form-group input::placeholder,
+  .form-group textarea::placeholder { color: #ccc; font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive; }
+  .form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+    max-height: 200px;
+    line-height: 1.6;
+  }
+  .form-group input[type="datetime-local"] {
+    cursor: pointer;
+    color-scheme: light;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 2.5px dashed #ddd;
+  }
+  .btn {
+    padding: 10px 28px;
+    border: 2px solid #2d2d3a;
+    font-family: 'ZCOOL KuaiLe', 'Long Cang', 'Caveat', cursive;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s;
+    box-shadow: 2px 2px 0 #2d2d3a;
+    background: #fffdf9;
+  }
+  .btn-primary {
+    background: #2d2d3a;
+    color: #fff;
+    box-shadow: 3px 3px 0 #2d2d3a;
+  }
+  .btn-primary:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 #2d2d3a; }
+  .btn-secondary:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 #2d2d3a; }
+
+  /* ---- 手绘装饰线 ---- */
+  .squiggle {
+    position: absolute;
+    bottom: -8px;
+    left: 5%;
+    width: 90%;
+    height: 4px;
+    opacity: 0.15;
+    background: repeating-linear-gradient(
+      90deg,
+      #2d2d3a 0px, #2d2d3a 6px,
+      transparent 6px, transparent 10px
+    );
+  }
+</style>
+</head>
+<body>
+<div id="wallpaper-layer"></div>
+<div id="wallpaper-overlay"></div>
+
+<!-- ===== Header ===== -->
+  <div class="header hand-drawn glass-heavy">
+  <h1>Todo Cards</h1>
+  <div class="header-stats">
+    <span>📌 待办 <span class="num todo" id="count-todo">0</span></span>
+    <span>⚡ 进行中 <span class="num doing" id="count-doing">0</span></span>
+    <span>✅ 已完成 <span class="num done" id="count-done">0</span></span>
+  </div>
+</div>
+
+<!-- ===== Add Button ===== -->
+<div class="add-bar">
+  <button class="btn-add-main glass-heavy" id="btn-open-modal">＋ 新任务 · sketch</button>
+  <button class="btn-add-main glass-heavy" id="btn-wallpaper" style="margin-left:8px;font-size:15px;padding:10px 18px;">🎨 壁纸</button>
+  <button class="btn-add-main glass-heavy" id="btn-export" style="margin-left:auto;font-size:14px;padding:10px 16px;">⬇ 导出</button>
+  <button class="btn-add-main glass-heavy" id="btn-import" style="margin-left:8px;font-size:14px;padding:10px 16px;">⬆ 导入</button>
+  <input type="file" id="file-input" accept=".json" style="display:none">
+</div>
+
+<!-- ===== Board ===== -->
+<div class="board">
+  <div class="column hand-drawn glass" data-status="todo">
+    <div class="column-header">
+      <span>📌 待办</span>
+      <span class="count" id="count-badge-todo">0</span>
+    </div>
+    <div class="card-list" id="col-todo"></div>
+  </div>
+  <div class="column hand-drawn glass" data-status="doing">
+    <div class="column-header">
+      <span>⚡ 进行中</span>
+      <span class="count" id="count-badge-doing">0</span>
+    </div>
+    <div class="card-list" id="col-doing"></div>
+  </div>
+  <div class="column hand-drawn glass" data-status="done">
+    <div class="column-header">
+      <span>✅ 已完成</span>
+      <span class="count" id="count-badge-done">0</span>
+    </div>
+    <div class="card-list" id="col-done"></div>
+  </div>
+</div>
+
+<!-- ===== 壁纸选择器 ===== -->
+<div class="modal-overlay" id="wallpaper-overlay-modal">
+  <div class="modal-card hand-drawn glass-heavy" style="width:580px;">
+    <h2>🎨 选择壁纸</h2>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;" id="wallpaper-grid">
+      <!-- 动态生成 -->
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btn-wallpaper-random">🎲 随机</button>
+      <button class="btn btn-secondary" id="btn-wallpaper-close">关闭</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== Modal ===== -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-card hand-drawn glass-heavy">
+    <h2 id="modal-title">✏️ 速写新任务</h2>
+    <div class="form-group">
+      <label>📅 时间</label>
+      <input type="datetime-local" id="input-time">
+    </div>
+    <div class="form-group">
+      <label>📌 任务</label>
+      <input type="text" id="input-title" placeholder="写点什么…" autofocus>
+    </div>
+    <div class="form-group">
+      <label>📎 备注</label>
+      <textarea id="input-desc" placeholder="草图备注、随手想法…"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="btn-modal-cancel">取消</button>
+      <button class="btn btn-primary" id="btn-modal-confirm">✓ 添加</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// ===================================================================
+// Class-based 架构（学 kards）+ 手绘风格渲染（学 Excalidraw）
+// ===================================================================
+
+// ---- 1. 数据模型：TodoItem 类 ----
+class TodoItem {
+  constructor(title, desc, time, id) {
+    this.id = id;
+    this.title = title;
+    this.desc = desc;
+    this.time = time || '';
+    this.status = 'todo';
+    this.createdAt = Date.now();
+  }
+  nextStatus() {
+    if (this.status === 'todo') return 'doing';
+    if (this.status === 'doing') return 'done';
+    return 'todo';
+  }
+}
+
+// ---- 2. TodoBoard 数据管理（像Excalidraw一样简单） ----
+class TodoBoard {
+  constructor() {
+    this.items = [];
+    this.nextId = 1;
+    this.deletedIds = new Set();
+    this.load();
+    this._loadDeletedIds();
+    // 页面加载完成后，从 data.js 同步真白的最新数据
+    setTimeout(() => this._syncFromDisk(), 100);
+  }
+  _loadDeletedIds() {
+    try {
+      const data = localStorage.getItem('todoCardsDeleted');
+      if (data) this.deletedIds = new Set(JSON.parse(data));
+    } catch(e) {}
+  }
+  _saveDeletedIds() {
+    localStorage.setItem('todoCardsDeleted', JSON.stringify([...this.deletedIds]));
+  }
+  /** 从 data.js（真白写的数据文件）同步，用<script>标签绕过file://限制 */
+  _syncFromDisk(callback) {
+    const existingIds = new Set(this.items.map(t => t.id));
+    let changed = false;
+
+    // 动态加载 data.js，加载完成时 window.__diskData 会有数据
+    window.__diskData = null;
+    const script = document.createElement('script');
+    script.src = 'data.js';
+    script.onload = () => {
+      const data = window.__diskData;
+      if (!data || !data.items) { script.remove(); if (callback) callback(false); return; }
+
+      // 合并策略：
+      // 真白加的新任务 → 全部以"todo"状态加入
+      // 用户删过的任务（ID在deletedIds中）→ 不恢复，真白要用新ID才行
+      // 已有任务（相同ID）→ 不动
+      data.items.forEach(t => {
+        if (!existingIds.has(t.id) && !this.deletedIds.has(t.id)) {
+          // 真白新加的任务 → 一律 todo
+          const item = Object.assign(new TodoItem(), t);
+          item.status = 'todo';
+          this.items.push(item);
+          existingIds.add(t.id);
+          changed = true;
+        }
+        // 相同ID → 不动
+      });
+
+      if (data.nextId && data.nextId > this.nextId) {
+        this.nextId = data.nextId;
+        changed = true;
+      }
+
+      if (changed) {
+        this.save();
+        if (typeof renderer !== 'undefined') renderer.render();
+      }
+
+      // 清理
+      delete window.__diskData;
+      script.remove();
+      if (callback) callback(true);
+    };
+    script.onerror = () => {
+      // data.js 不存在，静默跳过
+      script.remove();
+      if (callback) callback(false);
+    };
+    document.head.appendChild(script);
+  }
+  save() {
+    localStorage.setItem('todoCards', JSON.stringify(this.items));
+    localStorage.setItem('todoCardsNextId', String(this.nextId));
+  }
+  load() {
+    const data = localStorage.getItem('todoCards');
+    if (data) {
+      this.items = JSON.parse(data).map(t => Object.assign(new TodoItem(), t));
+      this.nextId = parseInt(localStorage.getItem('todoCardsNextId') || '1');
+    }
+  }
+  add(title, desc, time) {
+    if (!title.trim()) return false;
+    this.items.push(new TodoItem(title.trim(), desc.trim(), time, this.nextId++));
+    this.save();
+    return true;
+  }
+  edit(id, title, desc, time) {
+    const item = this.items.find(t => t.id === id);
+    if (!item) return false;
+    if (title.trim()) item.title = title.trim();
+    item.desc = desc.trim();
+    item.time = time;
+    this.save();
+    return true;
+  }
+  move(id, newStatus) {
+    const item = this.items.find(t => t.id === id);
+    if (item && item.status !== newStatus) { item.status = newStatus; this.save(); }
+  }
+  remove(id) {
+    this.items = this.items.filter(t => t.id !== id);
+    this.deletedIds.add(id);
+    this._saveDeletedIds();
+    this.save();
+  }
+  clearDone() {
+    const n = this.items.filter(t => t.status === 'done').length;
+    if (n > 0) {
+      this.items.filter(t => t.status === 'done').forEach(t => this.deletedIds.add(t.id));
+      this._saveDeletedIds();
+      this.items = this.items.filter(t => t.status !== 'done');
+      this.save();
+    }
+    return n;
+  }
+  exportJSON() {
+    const data = { items: this.items, nextId: this.nextId, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `todo-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  importJSON(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (!data.items || !Array.isArray(data.items)) throw new Error('格式不对');
+          this.items = data.items.map(t => Object.assign(new TodoItem(), t));
+          this.nextId = data.nextId || (data.items.length > 0 ? Math.max(...data.items.map(t => t.id)) + 1 : 1);
+          this.save();
+          resolve(true);
+        } catch (err) { reject(err); }
+      };
+      reader.onerror = () => reject(new Error('读取失败'));
+      reader.readAsText(file);
+    });
+  }
+  getByStatus(status) { return this.items.filter(t => t.status === status); }
+  getCounts() {
+    return {
+      todo: this.items.filter(t => t.status === 'todo').length,
+      doing: this.items.filter(t => t.status === 'doing').length,
+      done: this.items.filter(t => t.status === 'done').length
+    };
+  }
+}
+
+// ---- 3. Renderer（手绘风格渲染器） ----
+class Renderer {
+  constructor(board) {
+    this.board = board;
+    this.cols = {
+      todo: document.getElementById('col-todo'),
+      doing: document.getElementById('col-doing'),
+      done: document.getElementById('col-done')
+    };
+  }
+
+  render() {
+    const counts = this.board.getCounts();
+    const statuses = ['todo', 'doing', 'done'];
+    const icons = { todo: '📝', doing: '⏳', done: '🎯' };
+    const texts = { todo: '拖拽卡片或点「新任务」', doing: '拖到这里开始做', done: '完成的任务会在这里' };
+
+    statuses.forEach(status => {
+      const col = this.cols[status];
+      const items = this.board.getByStatus(status);
+      col.innerHTML = '';
+
+      if (items.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.innerHTML = `<div class="icon">${icons[status]}</div>${texts[status]}`;
+        col.appendChild(empty);
+      } else {
+        items.forEach(item => col.appendChild(this._createCard(item)));
+      }
+    });
+
+    document.getElementById('count-todo').textContent = counts.todo;
+    document.getElementById('count-doing').textContent = counts.doing;
+    document.getElementById('count-done').textContent = counts.done;
+    document.getElementById('count-badge-todo').textContent = counts.todo;
+    document.getElementById('count-badge-doing').textContent = counts.doing;
+    document.getElementById('count-badge-done').textContent = counts.done;
+  }
+
+  _createCard(item) {
+    const card = document.createElement('div');
+    card.className = 'card hand-drawn glass-card' + (item.status === 'done' ? ' done-card' : '');
+    card.dataset.id = item.id;
+    card.draggable = true;
+
+    let timeHtml = '';
+    if (item.time) {
+      const d = new Date(item.time);
+      const formatted = d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const isOverdue = d < new Date() && item.status !== 'done';
+      timeHtml = `<span class="card-time-tag hand-drawn-sm${isOverdue ? ' overdue' : ''}">📅 ${formatted}${isOverdue ? ' ⚠' : ''}</span>`;
+    }
+
+    card.innerHTML = `
+      <div class="card-title">${escHtml(item.title)}</div>
+      ${item.status !== 'done' && item.desc ? `<div class="card-desc">${escHtml(item.desc)}</div>` : ''}
+      ${item.status !== 'done' ? timeHtml : ''}
+      ${item.status === 'done' ? '<div class="done-stamp">✓ DONE</div>' : ''}
+      <div class="card-actions">
+        <button class="card-action-btn hand-drawn-sm btn-delete" data-action="delete" title="删除">✕</button>
+      </div>
+    `;
+
+    // 拖拽 + 双击编辑
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.card-action-btn')) return;
+      // 点击不做任何事，全靠拖拽
+    });
+    // 双击打开编辑弹窗
+    card.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.card-action-btn')) return;
+      openEditModal(item);
+    });
+
+    // 按钮
+    card.querySelectorAll('.card-action-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        if (action === 'delete') { this.board.remove(item.id); this.render(); }
+      });
+    });
+
+    // 拖拽
+    card.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', String(item.id));
+      e.dataTransfer.effectAllowed = 'move';
+      card.classList.add('dragging');
+      const ghost = document.createElement('div');
+      ghost.className = 'drag-ghost hand-drawn-sm';
+      ghost.textContent = item.title;
+      ghost.style.left = '-9999px';
+      ghost.style.top = '-9999px';
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 14, 14);
+      setTimeout(() => ghost.remove(), 0);
+    });
+
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      document.querySelectorAll('.column.drag-over').forEach(c => c.classList.remove('drag-over'));
+    });
+
+    return card;
+  }
+}
+
+// ---- 4. DragDropManager ----
+class DragDropManager {
+  constructor(board, renderer) {
+    this.board = board;
+    this.renderer = renderer;
+    document.querySelectorAll('.column').forEach(col => {
+      col.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        col.classList.add('drag-over');
+      });
+      col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+      col.addEventListener('drop', (e) => {
+        e.preventDefault();
+        col.classList.remove('drag-over');
+        const targetStatus = col.dataset.status;
+        const itemId = parseInt(e.dataTransfer.getData('text/plain'));
+        if (isNaN(itemId)) return;
+        const item = this.board.items.find(t => t.id === itemId);
+        if (!item || item.status === targetStatus) return;
+        this.board.move(itemId, targetStatus);
+        this.renderer.render();
+      });
+    });
+  }
+}
+
+// ---- 5. 工具 ----
+function escHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ---- Modal（新建 + 双击编辑）----
+const overlay = document.getElementById('modal-overlay');
+const modalTitle = document.getElementById('modal-title');
+const inputTitle = document.getElementById('input-title');
+const inputDesc = document.getElementById('input-desc');
+const inputTime = document.getElementById('input-time');
+let editingId = null; // null = 新建模式, 有值 = 编辑模式
+
+function setDefaultTime() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  inputTime.value = now.toISOString().slice(0, 16);
+}
+function openModal() {
+  editingId = null;
+  modalTitle.textContent = '✏️ 速写新任务';
+  document.getElementById('btn-modal-confirm').textContent = '✓ 添加';
+  setDefaultTime(); inputTitle.value = ''; inputDesc.value = '';
+  overlay.classList.add('active');
+  setTimeout(() => inputTitle.focus(), 100);
+}
+function openEditModal(item) {
+  editingId = item.id;
+  modalTitle.textContent = '✏️ 编辑任务';
+  document.getElementById('btn-modal-confirm').textContent = '✓ 保存修改';
+  inputTitle.value = item.title;
+  inputDesc.value = item.desc;
+  // 时间回填
+  if (item.time) {
+    inputTime.value = item.time.slice(0, 16);
+  } else {
+    setDefaultTime();
+  }
+  overlay.classList.add('active');
+  setTimeout(() => inputTitle.focus(), 100);
+}
+function closeModal() { overlay.classList.remove('active'); editingId = null; }
+function confirmAdd() {
+  const title = inputTitle.value.trim();
+  const desc = inputDesc.value.trim();
+  const time = inputTime.value;
+  if (!title) { inputTitle.focus(); return; }
+
+  if (editingId !== null) {
+    // 编辑模式
+    board.edit(editingId, title, desc, time);
+  } else {
+    // 新建模式
+    board.add(title, desc, time);
+  }
+  renderer.render();
+  closeModal();
+}
+
+document.getElementById('btn-open-modal').addEventListener('click', openModal);
+document.getElementById('btn-modal-cancel').addEventListener('click', closeModal);
+document.getElementById('btn-modal-confirm').addEventListener('click', confirmAdd);
+inputTitle.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); confirmAdd(); } });
+overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && overlay.classList.contains('active')) closeModal();
+  if (e.key === 'c' && e.ctrlKey && e.shiftKey) {
+    const count = board.clearDone();
+    if (count > 0) renderer.render();
+  }
+});
+
+// ---- 壁纸系统（自动检测文件夹里所有图片） ----
+class WallpaperManager {
+  constructor() {
+    this.layer = document.getElementById('wallpaper-layer');
+    this.list = [];
+    this.currentIndex = -1;
+    this.ready = false;
+    this._discover(); // 异步发现壁纸
+  }
+  async _discover() {
+    // 从 1.png 开始依次检测，直到找不到为止
+    // 同时也检测 .jpg
+    for (let i = 1; i <= 999; i++) {
+      const png = `file:///F:/zhuoimian/资源/pixiv/新建文件夹/${i}.png`;
+      const jpg = `file:///F:/zhuoimian/资源/pixiv/新建文件夹/${i}.jpg`;
+      if (await this._exists(png)) {
+        this.list.push(png);
+      } else if (await this._exists(jpg)) {
+        this.list.push(jpg);
+      } else {
+        break; // 连续找不到就停
+      }
+    }
+    this.ready = true;
+    // 记下总数，darling加新图后刷新就能用
+    localStorage.setItem('todoWallpaperCount', String(this.list.length));
+    this._loadPref();
+  }
+  _exists(url) {
+    return new Promise(resolve => {
+      const img = new Image();
+      let done = false;
+      img.onload = () => { if (!done) { done = true; resolve(true); } };
+      img.onerror = () => { if (!done) { done = true; resolve(false); } };
+      img.src = url;
+    });
+  }
+  _loadPref() {
+    if (this.list.length === 0) return;
+    const saved = localStorage.getItem('todoWallpaperIdx');
+    if (saved !== null && parseInt(saved) < this.list.length) {
+      this.setWallpaper(parseInt(saved));
+    } else {
+      this.random();
+    }
+  }
+  setWallpaper(idx) {
+    if (idx < 0 || idx >= this.list.length) return;
+    this.currentIndex = idx;
+    this.layer.style.backgroundImage = `url('${this.list[idx]}')`;
+    localStorage.setItem('todoWallpaperIdx', String(idx));
+  }
+  random() {
+    if (this.list.length === 0) return;
+    let idx;
+    do {
+      idx = Math.floor(Math.random() * this.list.length);
+    } while (idx === this.currentIndex && this.list.length > 1);
+    this.setWallpaper(idx);
+  }
+  openPicker() {
+    if (this.list.length === 0) { showToast('📂 还没有壁纸，放入图片后刷新~', 'ok'); return; }
+    const grid = document.getElementById('wallpaper-grid');
+    grid.innerHTML = '';
+    this.list.forEach((url, i) => {
+      const div = document.createElement('div');
+      div.style.cssText = `
+        aspect-ratio:1; border-radius:8px; cursor:pointer; overflow:hidden;
+        border: 3px solid ${i === this.currentIndex ? '#7c3aed' : 'transparent'};
+        background-image:url('${url}'); background-size:cover; background-position:center;
+        transition: border-color 0.2s, transform 0.15s;
+      `;
+      div.onmouseenter = () => { div.style.transform = 'scale(1.05)'; };
+      div.onmouseleave = () => { div.style.transform = 'scale(1)'; };
+      div.onclick = () => {
+        this.setWallpaper(i);
+        document.querySelectorAll('#wallpaper-grid > div').forEach(d => d.style.borderColor = 'transparent');
+        div.style.borderColor = '#7c3aed';
+      };
+      grid.appendChild(div);
+    });
+    document.getElementById('wallpaper-overlay-modal').classList.add('active');
+  }
+}
+
+const wm = new WallpaperManager();
+
+document.getElementById('btn-wallpaper').addEventListener('click', () => wm.openPicker());
+document.getElementById('btn-wallpaper-random').addEventListener('click', () => { wm.random(); wm.openPicker(); });
+document.getElementById('btn-wallpaper-close').addEventListener('click', () => {
+  document.getElementById('wallpaper-overlay-modal').classList.remove('active');
+});
+document.getElementById('wallpaper-overlay-modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) e.target.classList.remove('active');
+});
+
+// ---- 导出/导入 ----
+document.getElementById('btn-export').addEventListener('click', () => board.exportJSON());
+document.getElementById('btn-import').addEventListener('click', () => document.getElementById('file-input').click());
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    await board.importJSON(file);
+    renderer.render();
+      showToast('✅ 导入成功！数据已恢复。', 'ok');
+    } catch (err) {
+      showToast('❌ 导入失败：' + err.message, 'err');
+  }
+  e.target.value = '';
+});
+
+// ---- 手绘风格Toast提示（替代浏览器alert）----
+function showToast(msg, type) {
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    position:fixed; top:30px; left:50%; transform:translateX(-50%);
+    z-index:9999; pointer-events:none;
+    padding:12px 28px;
+    background:rgba(255,253,249,0.88);
+    backdrop-filter:blur(16px);
+    border:2px solid ${type === 'ok' ? '#2b8a3e' : '#dc2626'};
+    border-radius:30px 8px 28px 8px/8px 28px 8px 30px;
+    box-shadow:4px 4px 0 ${type === 'ok' ? '#2b8a3e' : '#dc2626'};
+    font-family:'ZCOOL KuaiLe','Long Cang','Caveat',cursive;
+    font-size:15px; color:#2d2d3a;
+    animation:toastIn 0.3s ease-out;
+  `;
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transition = 'opacity 0.3s';
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
+}
+
+// ---- 导出/导入 ----
+document.getElementById('btn-export').addEventListener('click', () => board.exportJSON());
+document.getElementById('btn-import').addEventListener('click', () => document.getElementById('file-input').click());
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    await board.importJSON(file);
+    renderer.render();
+    showToast('✅ 导入成功！', 'ok');
+  } catch (err) {
+    showToast('❌ 导入失败：' + err.message, 'err');
+  }
+  e.target.value = '';
+});
+
+// ---- 启动 ----
+const board = new TodoBoard();
+const renderer = new Renderer(board);
+const dnd = new DragDropManager(board, renderer);
+renderer.render();
+</script>
+
+</body>
+</html>
